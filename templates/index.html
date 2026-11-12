@@ -1,0 +1,803 @@
+<!-- ===================================================================
+     File: templates/index.html
+     Version: v4.5
+     Date: 2026-10-28
+     Description: Tailwind CSS dashboard with draggable & resizable 
+                  floating GPU graph HUD, persistent history, and aggregations.
+     =================================================================== -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clickbait Buster & Skimmer (v4.5)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col items-center py-10 px-4 relative">
+
+    <!-- FLOATING, DRAGGABLE & RESIZABLE GPU GRAPH HUD WINDOW -->
+    <div id="floatingGpuHud" class="fixed bottom-5 right-5 z-50 bg-gray-900/95 backdrop-blur-md border border-gray-700/80 shadow-2xl rounded-xl p-3.5 text-xs w-64 text-gray-200 hidden sm:flex flex-col select-none resize overflow-hidden min-w-[200px] min-h-[120px] max-w-[400px] max-h-[300px]">
+        
+        <!-- Draggable Header Handle -->
+        <div id="hudHeader" class="flex items-center justify-between mb-2 cursor-move bg-gray-800/50 px-2 py-1 rounded -mx-1 -mt-1">
+            <div class="flex items-center gap-2 pointer-events-none">
+                <span id="gpuStatusDot" class="h-2 w-2 rounded-full bg-gray-500 animate-pulse"></span>
+                <span class="font-bold text-indigo-400">GPU (RTX) Monitor</span>
+            </div>
+            <span id="gpuUtilText" class="font-mono text-gray-300">0%</span>
+        </div>
+
+        <!-- Mini SVG Sparkline Usage Graph -->
+        <div class="bg-gray-950 rounded p-1 mb-2 border border-gray-800 flex-1 flex flex-col justify-center">
+            <svg id="gpuGraphSvg" class="w-full h-full min-h-[35px]" viewBox="0 0 100 30" preserveAspectRatio="none">
+                <path id="gpuGraphPath" d="M0,30 L100,30" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round"></path>
+            </svg>
+        </div>
+
+        <div class="flex justify-between text-[10px] text-gray-400 font-mono">
+            <span>VRAM: <span id="vramText">-- / --</span></span>
+            <span id="gpuStatusLabel" class="text-indigo-300">Standby</span>
+        </div>
+    </div>
+
+    <div class="w-full max-w-4xl bg-gray-800 rounded-xl shadow-xl p-6 md:p-8 border border-gray-700">
+        <!-- Header & Summary Length Toggle -->
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+            <div>
+                <h1 class="text-3xl font-bold text-indigo-400">🚨 Clickbait Buster & Skimmer</h1>
+                <span class="text-xs text-gray-500">v4.5 | Port 5001 | Draggable/Resizable GPU HUD</span>
+            </div>
+            
+            <div class="bg-gray-900 p-2.5 rounded-lg border border-gray-700 flex items-center gap-2">
+                <input type="checkbox" id="smartSummaryToggle" checked class="h-4 w-4 rounded border-gray-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                <label for="smartSummaryToggle" class="text-xs text-gray-300 cursor-pointer select-none">
+                    <span class="font-bold text-indigo-300 block">Smart Summary</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="flex border-b border-gray-700 mb-6 overflow-x-auto">
+            <button onclick="switchTab('single')" id="tabSingle" class="py-2 px-4 font-semibold text-indigo-400 border-b-2 border-indigo-500 whitespace-nowrap focus:outline-none">Single Article</button>
+            <button onclick="switchTab('batch')" id="tabBatch" class="py-2 px-4 font-semibold text-gray-400 hover:text-gray-200 whitespace-nowrap focus:outline-none">Single-Site Batch</button>
+            <button onclick="switchTab('aggregator')" id="tabAggregator" class="py-2 px-4 font-semibold text-gray-400 hover:text-gray-200 whitespace-nowrap focus:outline-none">Multi-Site Aggregator</button>
+            <button onclick="switchTab('text')" id="tabText" class="py-2 px-4 font-semibold text-gray-400 hover:text-gray-200 whitespace-nowrap focus:outline-none">Text / Email Summarizer</button>
+        </div>
+
+        <!---------------- TAB 1: SINGLE ARTICLE ---------------->
+        <div id="sectionSingle" class="space-y-6">
+            <p class="text-gray-400">Paste an individual article link to expose the clickbait payload, evaluate time-value, and review AI summaries.</p>
+            
+            <div class="space-y-2">
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <input type="url" id="urlInput" placeholder="https://example.com/news-article" 
+                           class="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-gray-200 focus:outline-none focus:border-indigo-500">
+                    <button onclick="analyzeSingle()" id="submitSingleBtn"
+                            class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-lg transition">
+                        Bust & Skim
+                    </button>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-gray-400">
+                    <span>Recent History:</span>
+                    <select id="singleHistorySelect" onchange="if(this.value) document.getElementById('urlInput').value = this.value" class="bg-gray-900 border border-gray-700 text-gray-300 rounded px-2 py-1 text-xs">
+                        <option value="">-- Choose from History File --</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="loadingSingle" class="hidden text-center py-10">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
+                <p class="text-gray-400 mt-2">Agent parsing article through qwen3:8b...</p>
+            </div>
+
+            <div id="resultSingle" class="hidden space-y-6 border-t border-gray-700 pt-6">
+                <div>
+                    <span class="text-xs uppercase tracking-wider text-indigo-400 font-semibold">Headline</span>
+                    <h2 id="sTitle" class="text-xl font-bold text-white mt-1"></h2>
+                </div>
+                <div class="bg-gray-900 p-4 rounded-lg border border-gray-700 flex items-center justify-between">
+                    <div>
+                        <span class="text-xs uppercase tracking-wider text-gray-400 font-semibold">Clickbait Verdict</span>
+                        <p id="sVerdict" class="text-sm text-gray-300 mt-1"></p>
+                    </div>
+                    <div class="text-right pl-4">
+                        <span id="sPercentage" class="text-3xl font-extrabold text-indigo-400">0%</span>
+                        <span class="block text-xs text-gray-500">Headline Match</span>
+                    </div>
+                </div>
+                <div class="bg-indigo-950/40 border border-indigo-800/50 p-4 rounded-lg space-y-2">
+                    <h3 class="text-sm font-bold text-indigo-300 uppercase tracking-wider">The TL;DR</h3>
+                    <p id="sTldr" class="text-gray-200 leading-relaxed"></p>
+                    <div id="sDetailedBox" class="border-t border-indigo-900/50 pt-2 mt-2">
+                        <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">Summary Breakdown</h4>
+                        <p id="sDetailed" class="text-sm text-gray-300 leading-relaxed"></p>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Key Takeaways</h3>
+                    <ul id="sTakeaways" class="list-disc list-inside space-y-2 text-gray-300"></ul>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Readability & Value Score</h3>
+                        <p class="text-sm text-gray-300"><strong>Worth Reading?</strong> <span id="sWorth" class="text-indigo-400"></span></p>
+                        <p class="text-sm text-gray-300"><strong>Value Rating:</strong> <span id="sValue"></span></p>
+                        <p class="text-xs text-gray-400 mt-2" id="sReason"></p>
+                    </div>
+                    <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Red Flags / Filler Warning</h3>
+                        <p id="sRedFlags" class="text-sm text-gray-300"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!---------------- TAB 2: SINGLE-SITE BATCH ---------------->
+        <div id="sectionBatch" class="hidden space-y-6">
+            <p class="text-gray-400">Enter a single news website URL to index available articles. Review 10 per page and skim choices.</p>
+            
+            <div class="space-y-2">
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <input type="url" id="webUrlInput" placeholder="Enter target website URL (e.g. https://domain.com)" 
+                           class="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-gray-200 focus:outline-none focus:border-indigo-500">
+                    <button onclick="scanWebsite()" id="scanBtn"
+                            class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-6 py-3 rounded-lg transition">
+                        Scan Website
+                    </button>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-gray-400">
+                    <span>Recent History:</span>
+                    <select id="batchHistorySelect" onchange="if(this.value) document.getElementById('webUrlInput').value = this.value" class="bg-gray-900 border border-gray-700 text-gray-300 rounded px-2 py-1 text-xs">
+                        <option value="">-- Choose from History File --</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="loadingBatch" class="hidden text-center py-10">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-emerald-500 border-t-transparent"></div>
+                <p id="batchLoadingText" class="text-gray-400 mt-2">Crawling website indices...</p>
+            </div>
+
+            <div id="articleSelectionContainer" class="hidden space-y-4 border-t border-gray-700 pt-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <h3 class="text-lg font-bold text-white">Discovered Articles</h3>
+                    
+                    <div class="flex items-center gap-2 bg-gray-900 px-3 py-1.5 rounded border border-gray-700">
+                        <input type="checkbox" id="selectAllToggle" onchange="toggleSelectAll(this, 'articleCheckboxList')" class="h-4 w-4 rounded border-gray-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                        <label for="selectAllToggle" class="text-xs font-semibold text-gray-300 cursor-pointer select-none">Select / Deselect All</label>
+                    </div>
+
+                    <span id="batchCountBadge" class="text-xs bg-gray-700 text-gray-300 px-3 py-1 rounded-full">Page 1</span>
+                </div>
+
+                <div id="articleCheckboxList" class="space-y-3 bg-gray-900 p-4 rounded-lg border border-gray-700 max-h-96 overflow-y-auto"></div>
+                
+                <div class="flex justify-between items-center pt-2">
+                    <button onclick="nextBatch()" id="nextBatchBtn" class="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded-lg transition">
+                        Load Next 10 Articles ➡️
+                    </button>
+                    <button onclick="skimSelectedBatch('articleCheckboxList')" class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-2.5 rounded-lg transition">
+                        Skim Selected Articles
+                    </button>
+                </div>
+            </div>
+
+            <div id="batchResultsContainer" class="hidden space-y-6 border-t border-gray-700 pt-6">
+                <h3 class="text-xl font-bold text-indigo-400">📊 Batch Skim Results</h3>
+                <div id="batchResultsList" class="space-y-6"></div>
+            </div>
+        </div>
+
+        <!---------------- TAB 3: MULTI-SITE AGGREGATOR ---------------->
+        <div id="sectionAggregator" class="hidden space-y-6">
+            <p class="text-gray-400">Add up to 5 news links. Articles are crisscrossed evenly using round-robin interleaving (15 per page).</p>
+            
+            <div class="space-y-3" id="aggregatorInputContainer">
+                <div class="flex gap-2 aggregator-row items-center">
+                    <input type="url" placeholder="News Site #1 (e.g., https://site1.com)" 
+                           class="aggregator-url flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-200 focus:outline-none focus:border-indigo-500">
+                    <select onchange="if(this.value) this.previousElementSibling.value = this.value" class="aggregator-history bg-gray-900 border border-gray-700 text-gray-300 rounded px-2 py-2 text-xs">
+                        <option value="">History</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-3">
+                <button onclick="addNewsLinkInput()" id="addNewsLinkBtn" class="w-full sm:w-auto bg-gray-700 hover:bg-gray-600 text-indigo-300 text-sm font-semibold px-4 py-2.5 rounded-lg transition border border-indigo-900/50">
+                    ＋ Add News Link (Max 5)
+                </button>
+                <button onclick="startMultiSearch()" id="startSearchBtn" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-8 py-2.5 rounded-lg transition">
+                    🔍 Start Searching
+                </button>
+            </div>
+
+            <div id="loadingAggregator" class="hidden text-center py-10">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
+                <p id="aggregatorLoadingText" class="text-gray-400 mt-2">Crawling news sources concurrently...</p>
+            </div>
+
+            <div id="aggregatorSelectionContainer" class="hidden space-y-4 border-t border-gray-700 pt-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                        <h3 class="text-lg font-bold text-white">Aggregated Articles Feed (15 per page)</h3>
+                        <p class="text-xs text-amber-400">⚠️ Maximum 10 selections allowed per skim session.</p>
+                    </div>
+
+                    <div class="flex items-center gap-2 bg-gray-900 px-3 py-1.5 rounded border border-gray-700">
+                        <input type="checkbox" id="selectAllAggToggle" onchange="toggleSelectAll(this, 'aggregatorCheckboxList')" class="h-4 w-4 rounded border-gray-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                        <label for="selectAllAggToggle" class="text-xs font-semibold text-gray-300 cursor-pointer select-none">Select / Deselect All</label>
+                    </div>
+
+                    <span id="aggregatorCountBadge" class="text-xs bg-gray-700 text-gray-300 px-3 py-1 rounded-full">Page 1</span>
+                </div>
+
+                <div id="aggregatorCheckboxList" class="space-y-3 bg-gray-900 p-4 rounded-lg border border-gray-700 max-h-96 overflow-y-auto"></div>
+                
+                <div class="flex justify-between items-center pt-2">
+                    <button onclick="nextAggregatorBatch()" class="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded-lg transition">
+                        Load Next 15 Articles ➡️
+                    </button>
+                    <button onclick="skimSelectedBatch('aggregatorCheckboxList')" class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-2.5 rounded-lg transition">
+                        Skim Selected Articles
+                    </button>
+                </div>
+            </div>
+
+            <div id="aggregatorResultsContainer" class="hidden space-y-6 border-t border-gray-700 pt-6">
+                <h3 class="text-xl font-bold text-indigo-400">📊 Multi-Source Skim Results</h3>
+                <div id="aggregatorResultsList" class="space-y-6"></div>
+            </div>
+        </div>
+
+        <!---------------- TAB 4: TEXT / EMAIL SUMMARIZER ---------------->
+        <div id="sectionText" class="hidden space-y-6">
+            <div class="bg-indigo-950/30 border border-indigo-900/50 p-4 rounded-lg">
+                <h3 class="text-sm font-bold text-indigo-300 flex items-center gap-2">
+                    🔒 Ephemeral Privacy Mode
+                </h3>
+                <p class="text-xs text-gray-300 mt-1">Paste emails, documents, or reports below for instant summarization. Text entered here is processed in memory and **never recorded or stored** in history.</p>
+            </div>
+
+            <div class="space-y-3">
+                <textarea id="rawTextInput" rows="8" placeholder="Paste your email, message, or document text here..."
+                          class="w-full bg-gray-900 border border-gray-700 rounded-lg p-4 text-gray-200 focus:outline-none focus:border-indigo-500 text-sm leading-relaxed"></textarea>
+                <div class="flex justify-between items-center">
+                    <button onclick="document.getElementById('rawTextInput').value = ''" class="text-xs text-gray-500 hover:text-gray-300">Clear Input</button>
+                    <button onclick="summarizeRawText()" id="summarizeTextBtn"
+                            class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-2.5 rounded-lg transition">
+                        Summarize Text / Email
+                    </button>
+                </div>
+            </div>
+
+            <div id="loadingText" class="hidden text-center py-10">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
+                <p class="text-gray-400 mt-2">Summarizing text with local qwen3:8b (zero persistent storage)...</p>
+            </div>
+
+            <div id="resultText" class="hidden space-y-6 border-t border-gray-700 pt-6">
+                <div class="bg-gray-900 p-4 rounded-lg border border-gray-700 flex items-center justify-between">
+                    <div>
+                        <span class="text-xs uppercase tracking-wider text-gray-400 font-semibold">Priority & Urgency</span>
+                        <p id="tUrgency" class="text-sm font-bold text-indigo-400 mt-0.5"></p>
+                    </div>
+                    <div class="text-right">
+                        <span id="tTimeSaved" class="text-xl font-extrabold text-emerald-400">--</span>
+                        <span class="block text-[10px] text-gray-500">Reading Time Saved</span>
+                    </div>
+                </div>
+
+                <div class="bg-indigo-950/40 border border-indigo-800/50 p-4 rounded-lg">
+                    <h3 class="text-sm font-bold text-indigo-300 uppercase tracking-wider mb-1">Executive Summary (TL;DR)</h3>
+                    <p id="tTldr" class="text-gray-200 leading-relaxed"></p>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Key Takeaways</h3>
+                        <ul id="tTakeaways" class="list-disc list-inside space-y-1.5 text-sm text-gray-300"></ul>
+                    </div>
+                    <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Action Items & Next Steps</h3>
+                        <ul id="tActions" class="list-disc list-inside space-y-1.5 text-sm text-gray-300"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allScrapedArticles = [];
+        let currentBatchIndex = 0;
+        const batchSize = 10;
+
+        let allAggregatedArticles = [];
+        let currentAggregatorBatchIndex = 0;
+        const aggregatorBatchSize = 15;
+        let globalHistoryData = { single: [], batch: [], aggregator: [] };
+        let gpuHistory = Array(20).fill(0);
+
+        window.addEventListener('DOMContentLoaded', () => {
+            fetchHistory();
+            setInterval(fetchGpuStats, 2500);
+            initDraggableHud();
+        });
+
+        // Make floating HUD window draggable by its header
+        function initDraggableHud() {
+            const hud = document.getElementById('floatingGpuHud');
+            const header = document.getElementById('hudHeader');
+            let isDragging = false, startX, startY, initialX, initialY;
+
+            header.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                const rect = hud.getBoundingClientRect();
+                initialX = rect.left;
+                initialY = rect.top;
+                hud.style.bottom = 'auto';
+                hud.style.right = 'auto';
+                hud.style.left = initialX + 'px';
+                hud.style.top = initialY + 'px';
+                e.preventDefault();
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                hud.style.left = (initialX + dx) + 'px';
+                hud.style.top = (initialY + dy) + 'px';
+            });
+
+            window.addEventListener('mouseup', () => { isDragging = false; });
+        }
+
+        async function fetchGpuStats() {
+            try {
+                const res = await fetch('/gpu-stats');
+                const data = await res.json();
+                if (!data.available) return;
+                
+                document.getElementById('gpuUtilText').innerText = data.gpu_utilization;
+                document.getElementById('vramText').innerText = `${data.vram_used} / ${data.vram_total}`;
+                
+                const utilNum = data.gpu_util_num || 0;
+                updateGpuGraph(utilNum);
+
+                const dot = document.getElementById('gpuStatusDot');
+                const label = document.getElementById('gpuStatusLabel');
+                if (utilNum > 5) {
+                    dot.className = "h-2 w-2 rounded-full bg-emerald-400 animate-ping";
+                    label.innerText = "Computing...";
+                    label.className = "text-emerald-400 font-bold";
+                } else {
+                    dot.className = "h-2 w-2 rounded-full bg-indigo-500";
+                    label.innerText = "Standby";
+                    label.className = "text-indigo-300";
+                }
+            } catch(e) {}
+        }
+
+        function updateGpuGraph(val) {
+            gpuHistory.shift();
+            gpuHistory.push(val);
+            
+            const points = gpuHistory.map((v, i) => {
+                const x = (i / (gpuHistory.length - 1)) * 100;
+                const y = 30 - (v / 100) * 26;
+                return `${x},${y}`;
+            });
+            
+            document.getElementById('gpuGraphPath').setAttribute('d', `M ${points.join(' L ')}`);
+        }
+
+        async function fetchHistory() {
+            try {
+                const res = await fetch('/history');
+                globalHistoryData = await res.json();
+                
+                const sSelect = document.getElementById('singleHistorySelect');
+                sSelect.innerHTML = '<option value="">-- Choose from History File --</option>';
+                (globalHistoryData.single || []).forEach(url => {
+                    const opt = document.createElement('option');
+                    opt.value = url; opt.innerText = url; sSelect.appendChild(opt);
+                });
+
+                const bSelect = document.getElementById('batchHistorySelect');
+                bSelect.innerHTML = '<option value="">-- Choose from History File --</option>';
+                (globalHistoryData.batch || []).forEach(url => {
+                    const opt = document.createElement('option');
+                    opt.value = url; opt.innerText = url; bSelect.appendChild(opt);
+                });
+
+                populateAggregatorSelect(document.querySelector('.aggregator-history'));
+
+                if (!document.getElementById('urlInput').value && globalHistoryData.single && globalHistoryData.single.length > 0) {
+                    document.getElementById('urlInput').value = globalHistoryData.single[0];
+                }
+                if (!document.getElementById('webUrlInput').value && globalHistoryData.batch && globalHistoryData.batch.length > 0) {
+                    document.getElementById('webUrlInput').value = globalHistoryData.batch[0];
+                }
+                const firstAggInput = document.querySelector('.aggregator-url');
+                if (firstAggInput && !firstAggInput.value && globalHistoryData.aggregator && globalHistoryData.aggregator.length > 0) {
+                    firstAggInput.value = globalHistoryData.aggregator[0];
+                }
+            } catch(e) { console.log('Error loading history:', e); }
+        }
+
+        function populateAggregatorSelect(selectEl) {
+            if (!selectEl) return;
+            selectEl.innerHTML = '<option value="">History</option>';
+            (globalHistoryData.aggregator || []).forEach(url => {
+                const opt = document.createElement('option');
+                opt.value = url; opt.innerText = url; selectEl.appendChild(opt);
+            });
+        }
+
+        function switchTab(tab) {
+            const singleSec = document.getElementById('sectionSingle');
+            const batchSec = document.getElementById('sectionBatch');
+            const aggSec = document.getElementById('sectionAggregator');
+            const textSec = document.getElementById('sectionText');
+            
+            const tabSingle = document.getElementById('tabSingle');
+            const tabBatch = document.getElementById('tabBatch');
+            const tabAgg = document.getElementById('tabAggregator');
+            const tabText = document.getElementById('tabText');
+
+            const activeClass = "py-2 px-4 font-semibold text-indigo-400 border-b-2 border-indigo-500 whitespace-nowrap focus:outline-none";
+            const inactiveClass = "py-2 px-4 font-semibold text-gray-400 hover:text-gray-200 whitespace-nowrap focus:outline-none";
+
+            [singleSec, batchSec, aggSec, textSec].forEach(s => s.classList.add('hidden'));
+            [tabSingle, tabBatch, tabAgg, tabText].forEach(t => t.className = inactiveClass);
+
+            if (tab === 'single') { singleSec.classList.remove('hidden'); tabSingle.className = activeClass; }
+            else if (tab === 'batch') { batchSec.classList.remove('hidden'); tabBatch.className = activeClass; }
+            else if (tab === 'aggregator') { aggSec.classList.remove('hidden'); tabAgg.className = activeClass; }
+            else if (tab === 'text') { textSec.classList.remove('hidden'); tabText.className = activeClass; }
+        }
+
+        function addNewsLinkInput() {
+            const container = document.getElementById('aggregatorInputContainer');
+            const currentInputs = container.querySelectorAll('.aggregator-row').length;
+
+            if (currentInputs >= 5) { alert('Up to 5 news website sources allowed.'); return; }
+
+            const row = document.createElement('div');
+            row.className = "flex gap-2 aggregator-row items-center";
+            row.innerHTML = `
+                <input type="url" placeholder="News Site #${currentInputs + 1} (e.g., https://site${currentInputs + 1}.com)" 
+                       class="aggregator-url flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-200 focus:outline-none focus:border-indigo-500">
+                <select onchange="if(this.value) this.previousElementSibling.value = this.value" class="aggregator-history bg-gray-900 border border-gray-700 text-gray-300 rounded px-2 py-2 text-xs">
+                    <option value="">History</option>
+                </select>
+                <button onclick="this.parentElement.remove()" class="bg-red-900/40 hover:bg-red-900/70 text-red-300 border border-red-800 px-3 py-2 rounded-lg text-xs font-semibold">Remove</button>
+            `;
+            container.appendChild(row);
+            populateAggregatorSelect(row.querySelector('.aggregator-history'));
+
+            if (container.querySelectorAll('.aggregator-row').length >= 5) {
+                document.getElementById('addNewsLinkBtn').classList.add('hidden');
+            }
+        }
+
+        async function startMultiSearch() {
+            const inputElements = document.querySelectorAll('.aggregator-url');
+            const urls = Array.from(inputElements).map(inp => inp.value.trim()).filter(val => val !== '');
+
+            if (urls.length === 0) { alert('Enter at least one news website link.'); return; }
+
+            const loading = document.getElementById('loadingAggregator');
+            const container = document.getElementById('aggregatorSelectionContainer');
+            document.getElementById('aggregatorResultsContainer').classList.add('hidden');
+            loading.classList.remove('hidden');
+            container.classList.add('hidden');
+
+            try {
+                const res = await fetch('/aggregate-websites', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({urls})
+                });
+                const data = await res.json();
+                if(!res.ok) throw new Error(data.error);
+
+                allAggregatedArticles = data.articles;
+                currentAggregatorBatchIndex = 0;
+                renderAggregatorCheckboxes();
+                container.classList.remove('hidden');
+                fetchHistory();
+            } catch(e) { alert(e.message); }
+            finally { loading.classList.add('hidden'); }
+        }
+
+        function renderAggregatorCheckboxes() {
+            const listEl = document.getElementById('aggregatorCheckboxList');
+            listEl.innerHTML = '';
+            
+            const start = currentAggregatorBatchIndex * aggregatorBatchSize;
+            const slice = allAggregatedArticles.slice(start, start + aggregatorBatchSize);
+            
+            if (slice.length === 0) {
+                currentAggregatorBatchIndex = 0;
+                renderAggregatorCheckboxes();
+                return;
+            }
+
+            document.getElementById('aggregatorCountBadge').innerText = `Showing ${start + 1} - ${start + slice.length} of ${allAggregatedArticles.length}`;
+            document.getElementById('selectAllAggToggle').checked = false;
+
+            slice.forEach((art, idx) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = "flex items-start gap-3 p-2.5 hover:bg-gray-800 rounded transition border border-gray-800/60";
+                itemDiv.innerHTML = `
+                    <input type="checkbox" value="${art.url}" id="agg_art_${start + idx}" 
+                           onchange="enforceMaxSelection(this)" 
+                           class="agg-checkbox mt-1.5 h-4 w-4 rounded border-gray-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                    <label for="agg_art_${start + idx}" class="text-sm text-gray-200 cursor-pointer flex-1">
+                        <div class="flex justify-between items-center mb-0.5">
+                            <span class="font-semibold text-indigo-300 block">${art.headline}</span>
+                            <span class="text-[10px] bg-indigo-950 text-indigo-400 px-2 py-0.5 rounded border border-indigo-800/40 ml-2 whitespace-nowrap">${art.source_domain || 'News Source'}</span>
+                        </div>
+                        <span class="text-xs text-gray-500 truncate block max-w-lg">${art.url}</span>
+                    </label>
+                `;
+                listEl.appendChild(itemDiv);
+            });
+        }
+
+        function enforceMaxSelection(checkbox) {
+            const checkedCount = document.querySelectorAll('.agg-checkbox:checked').length;
+            if (checkedCount > 10) {
+                checkbox.checked = false;
+                alert('You can select a maximum of 10 articles to skim at a time.');
+            }
+        }
+
+        function nextAggregatorBatch() {
+            currentAggregatorBatchIndex++;
+            if (currentAggregatorBatchIndex * aggregatorBatchSize >= allAggregatedArticles.length) {
+                currentAggregatorBatchIndex = 0;
+            }
+            renderAggregatorCheckboxes();
+        }
+
+        function toggleSelectAll(masterCheckbox, containerId) {
+            const checkboxes = document.querySelectorAll(`#${containerId} input[type="checkbox"]`);
+            checkboxes.forEach(cb => {
+                if (containerId === 'aggregatorCheckboxList') {
+                    const currentlyChecked = document.querySelectorAll('.agg-checkbox:checked').length;
+                    if (masterCheckbox.checked && currentlyChecked < 10) {
+                        cb.checked = true;
+                    } else if (!masterCheckbox.checked) {
+                        cb.checked = false;
+                    }
+                } else {
+                    cb.checked = masterCheckbox.checked;
+                }
+            });
+        }
+
+        async function analyzeSingle() {
+            const url = document.getElementById('urlInput').value.trim();
+            const smartSummary = document.getElementById('smartSummaryToggle').checked;
+            if (!url) { alert('Enter valid URL'); return; }
+
+            const loading = document.getElementById('loadingSingle');
+            const results = document.getElementById('resultSingle');
+            loading.classList.remove('hidden');
+            results.classList.add('hidden');
+
+            try {
+                const res = await fetch('/analyze', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url, smart_summary: smartSummary})
+                });
+                const data = await res.json();
+                if(!res.ok) throw new Error(data.error || 'Error');
+
+                document.getElementById('sTitle').innerText = data.original_title;
+                document.getElementById('sPercentage').innerText = (data.clickbait_percentage || 0) + '%';
+                document.getElementById('sVerdict').innerText = data.clickbait_verdict;
+                document.getElementById('sTldr').innerText = data.tldr;
+                document.getElementById('sDetailed').innerText = data.detailed_summary || 'No additional summary provided.';
+                document.getElementById('sWorth').innerText = data.worth_reading;
+                document.getElementById('sValue').innerText = data.value_rating;
+                document.getElementById('sReason').innerText = data.reason || '';
+                document.getElementById('sRedFlags').innerText = data.red_flags;
+                
+                const list = document.getElementById('sTakeaways');
+                list.innerHTML = '';
+                (data.takeaways || []).forEach(t => {
+                    const li = document.createElement('li'); li.innerText = t; list.appendChild(li);
+                });
+                results.classList.remove('hidden');
+                fetchHistory();
+            } catch(e) { alert(e.message); }
+            finally { loading.classList.add('hidden'); }
+        }
+
+        async function scanWebsite() {
+            const url = document.getElementById('webUrlInput').value.trim();
+            if (!url) { alert('Please enter a website URL'); return; }
+
+            const loading = document.getElementById('loadingBatch');
+            const container = document.getElementById('articleSelectionContainer');
+            document.getElementById('batchResultsContainer').classList.add('hidden');
+            loading.classList.remove('hidden');
+            container.classList.add('hidden');
+
+            try {
+                const res = await fetch('/scan-website', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url})
+                });
+                const data = await res.json();
+                if(!res.ok) throw new Error(data.error);
+
+                allScrapedArticles = data.articles;
+                currentBatchIndex = 0;
+                renderBatchCheckboxes();
+                container.classList.remove('hidden');
+                fetchHistory();
+            } catch(e) { alert(e.message); }
+            finally { loading.classList.add('hidden'); }
+        }
+
+        function renderBatchCheckboxes() {
+            const listEl = document.getElementById('articleCheckboxList');
+            listEl.innerHTML = '';
+            
+            const start = currentBatchIndex * batchSize;
+            const slice = allScrapedArticles.slice(start, start + batchSize);
+            
+            if (slice.length === 0) {
+                currentBatchIndex = 0;
+                renderBatchCheckboxes();
+                return;
+            }
+
+            document.getElementById('batchCountBadge').innerText = `Showing ${start + 1} - ${start + slice.length} of ${allScrapedArticles.length}`;
+            document.getElementById('selectAllToggle').checked = false;
+
+            slice.forEach((art, idx) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = "flex items-start gap-3 p-2 hover:bg-gray-800 rounded transition";
+                itemDiv.innerHTML = `
+                    <input type="checkbox" value="${art.url}" id="art_${start + idx}" class="article-checkbox mt-1.5 h-4 w-4 rounded border-gray-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                    <label for="art_${start + idx}" class="text-sm text-gray-200 cursor-pointer">
+                        <span class="font-semibold text-indigo-300 block">${art.headline}</span>
+                        <span class="text-xs text-gray-500 truncate block max-w-lg">${art.url}</span>
+                    </label>
+                `;
+                listEl.appendChild(itemDiv);
+            });
+        }
+
+        function nextBatch() {
+            currentBatchIndex++;
+            if (currentBatchIndex * batchSize >= allScrapedArticles.length) {
+                currentBatchIndex = 0;
+            }
+            renderBatchCheckboxes();
+        }
+
+        async function summarizeRawText() {
+            const text = document.getElementById('rawTextInput').value.trim();
+            if (!text) { alert('Please paste some text or email content.'); return; }
+
+            const loading = document.getElementById('loadingText');
+            const result = document.getElementById('resultText');
+            loading.classList.remove('hidden');
+            result.classList.add('hidden');
+
+            try {
+                const res = await fetch('/summarize-text', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text})
+                });
+                const data = await res.json();
+                if(!res.ok) throw new Error(data.error);
+
+                document.getElementById('tUrgency').innerText = data.sentiment_urgency || 'Normal';
+                document.getElementById('tTimeSaved').innerText = data.reading_time_saved || 'N/A';
+                document.getElementById('tTldr').innerText = data.tldr;
+
+                const takeList = document.getElementById('tTakeaways');
+                takeList.innerHTML = '';
+                (data.key_takeaways || []).forEach(t => {
+                    const li = document.createElement('li'); li.innerText = t; takeList.appendChild(li);
+                });
+
+                const actList = document.getElementById('tActions');
+                actList.innerHTML = '';
+                (data.action_items || []).forEach(a => {
+                    const li = document.createElement('li'); li.innerText = a; actList.appendChild(li);
+                });
+
+                result.classList.remove('hidden');
+            } catch(e) { alert(e.message); }
+            finally { loading.classList.add('hidden'); }
+        }
+
+        async function skimSelectedBatch(listContainerId) {
+            const checkboxes = document.querySelectorAll(`#${listContainerId} input[type="checkbox"]:checked`);
+            const selectedUrls = Array.from(checkboxes).map(cb => cb.value);
+            const smartSummary = document.getElementById('smartSummaryToggle').checked;
+
+            if (selectedUrls.length === 0) {
+                alert('Please select at least one article to skim.');
+                return;
+            }
+
+            const isAggregator = listContainerId === 'aggregatorCheckboxList';
+            const loading = document.getElementById(isAggregator ? 'loadingAggregator' : 'loadingBatch');
+            const batchLoadingText = document.getElementById(isAggregator ? 'aggregatorLoadingText' : 'batchLoadingText');
+            const resultsContainer = document.getElementById(isAggregator ? 'aggregatorResultsContainer' : 'batchResultsContainer');
+            const resultsList = document.getElementById(isAggregator ? 'aggregatorResultsList' : 'batchResultsList');
+
+            loading.classList.remove('hidden');
+            resultsContainer.classList.add('hidden');
+            batchLoadingText.innerText = `Skimming ${selectedUrls.length} selected articles with Ollama (qwen3:8b)...`;
+
+            try {
+                const res = await fetch('/batch-analyze', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({urls: selectedUrls, smart_summary: smartSummary})
+                });
+                const data = await res.json();
+                if(!res.ok) throw new Error(data.error);
+
+                resultsList.innerHTML = '';
+
+                data.results.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = "bg-gray-900 border border-gray-700 rounded-lg p-5 space-y-3";
+                    
+                    if (item.error) {
+                        card.innerHTML = `<h4 class="text-red-400 font-bold">${item.url}</h4><p class="text-sm text-gray-400">${item.error}</p>`;
+                    } else {
+                        const showDetailed = item.detailed_summary && item.detailed_summary.trim().length > 0;
+                        card.innerHTML = `
+                            <div class="flex justify-between items-start gap-4">
+                                <div>
+                                    <span class="text-xs uppercase text-indigo-400 font-semibold">Article Result</span>
+                                    <h4 class="text-lg font-bold text-white mt-0.5">${item.original_title}</h4>
+                                    <a href="${item.url}" target="_blank" class="text-xs text-indigo-400 underline hover:text-indigo-300">Open Full Article Link ↗</a>
+                                </div>
+                                <div class="text-right whitespace-nowrap">
+                                    <span class="text-2xl font-extrabold text-indigo-400">${item.clickbait_percentage || 0}%</span>
+                                    <span class="block text-[10px] text-gray-500">Headline Match</span>
+                                </div>
+                            </div>
+                            <div class="bg-indigo-950/30 border border-indigo-900/50 p-3 rounded space-y-2">
+                                <p class="text-sm text-gray-200"><strong>TL;DR:</strong> ${item.tldr}</p>
+                                ${showDetailed ? `
+                                <div class="border-t border-indigo-900/40 pt-2">
+                                    <span class="text-xs font-bold text-indigo-300 uppercase tracking-wider block mb-1">Detailed Breakdown</span>
+                                    <p class="text-sm text-gray-300 leading-relaxed">${item.detailed_summary}</p>
+                                </div>` : ''}
+                            </div>
+                            <div class="text-xs text-gray-400 flex flex-wrap gap-4 pt-1">
+                                <span><strong>Worth Reading:</strong> <span class="text-indigo-300">${item.worth_reading}</span></span>
+                                <span><strong>Value Rating:</strong> ${item.value_rating}</span>
+                            </div>
+                            <p class="text-xs text-gray-400"><strong>Fluff Note:</strong> ${item.red_flags || 'None'}</p>
+                        `;
+                    }
+                    resultsList.appendChild(card);
+                });
+
+                resultsContainer.classList.remove('hidden');
+            } catch(e) { alert(e.message); }
+            finally { loading.classList.add('hidden'); }
+        }
+    </script>
+</body>
+</html>
